@@ -210,22 +210,46 @@ impl<'a> ProgressTracker<'a> {
     /// }
     /// ```
     pub fn tick(&mut self) -> ProgressTick {
-        let mut player_quit = false;
-        let mut progress_changed = false;
-        let mut track_list_changed = false;
-        let old_shuffle = self.last_progress.shuffle;
-
         // Calculate time left until we're expected to return with new data.
         let time_left = self
             .interval
             .checked_sub(self.last_tick.elapsed())
             .unwrap_or_else(|| Duration::from_millis(0));
 
+        self.tick_for(time_left)
+    }
+
+    /// Returns a `ProgressTick` after the given timeout.
+    ///
+    /// The returned struct contains borrows of the current data along with booleans telling you if
+    /// the underlying data changed or not. See `ProgressTick` for more information about that.
+    ///
+    /// ## On reusing data
+    ///
+    /// `Progress` can be reused until something about the player changes, like track or playback
+    /// status. As long as nothing changes, `Progress` can accurately determine playback position
+    /// from timing data.
+    ///
+    /// In addition, `TrackList` will maintain a cache of track metadata so as long as the list
+    /// remains static if should be cheap to read from it.
+    ///
+    /// You can use the `bool`s in the `ProgressTick` to perform optimizations as they tell you if
+    /// any data has changed. If all of them are `false` you don't have to treat any of the data as
+    /// dirty.
+    ///
+    /// The calculated `Progress::position` might still change depending on the player state, so if
+    /// you want to show the track position you might still want to refresh that part.
+    pub fn tick_for(&mut self, timeout: Duration) -> ProgressTick {
+        let mut player_quit = false;
+        let mut progress_changed = false;
+        let mut track_list_changed = false;
+        let old_shuffle = self.last_progress.shuffle;
+
         // Refresh events if we're not late.
-        if time_left > Duration::from_millis(0) {
+        if timeout > Duration::from_millis(0) {
             self.player
                 .connection()
-                .process_events_blocking_for(time_left);
+                .process_events_blocking_for(timeout);
         }
 
         // Process events that are queued up for us
